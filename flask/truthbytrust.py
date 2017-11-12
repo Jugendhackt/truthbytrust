@@ -19,10 +19,13 @@ def hello_world():
 def addArticle():
     form = AddArticleForm(request.form)
     if form.validate():
-        article = Article(content=form.content.data, summary=form.summary.data, title=form.title.data, longkeyid = form.longkeyid.data, updated=datetime.datetime.now(), published=datetime.datetime.now())
-        db.session.add(article)
-        db.session.commit()
-        return make_response('Added article successfully', 201)
+        article = Article(content=form.content.data, summary=form.summary.data, title=form.title.data, updated=datetime.datetime.now(), published=datetime.datetime.now())
+        if article.verify():
+            db.session.add(article)
+            db.session.commit()
+            return make_response('Added article successfully', 201)
+        else:
+            return make_response('Signature not found or incorrect (currently only on pgp.mit.edu)', 400)
     else:
         return make_response('Missing arguments or invalid length', 400)
 
@@ -34,7 +37,7 @@ def recent_feed():
     for article in articles:
         feed.add(str(article.title), str(article.content),
                  content_type='html',
-                 author=str(article.longkeyid),
+                 author=str(article.username),
                  #url=make_external(article.url),
                  url=article.id,
                  summary=article.summary,
@@ -49,12 +52,19 @@ class Article(db.Model):
     summary = db.Column(db.Unicode, nullable=False)
     updated = db.Column(db.DateTime, nullable=False)
     published = db.Column(db.DateTime, nullable=False)
+    username = db.Column(db.Unicode)
 
     def verify(self):
         gpg = gnupg.GPG(gnupghome='/tmp')
         gpg.encoding = 'utf-8'
         verified = gpg.verify(self.content)
-
+        #import pdb;pdb.set_trace()
+        keyid = verified.key_id
+        import_result = gpg.recv_keys('http://pgp.mit.edu', keyid)
+        verified = gpg.verify(self.content)
+        valid = verified.valid
+        self.username = verified.username
+        return valid
 
     def __repr__(self):
         return '<Article %r>' % self.title
